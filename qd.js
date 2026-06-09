@@ -1,10 +1,10 @@
 var title = "260528起点自动";
 var logFile = false; // 是否将日志保存到文件中
 
-var closeButtonBottom = 200; // 新广告右上角的X的下沿高度，控制台也放这么高
+var closeButtonBottom = 240; // 新广告右上角的X的下沿高度，控制台也放这么高
 // 如果在你手机上控制台跟广告的X高度距离太远，请修改这个，因为会影响模拟扫描循环点击X；
 var t_click_step = 10;      // 循环扫描点击时，每步移这么远再点下一次
-var t_click_x_left = 60;   // 循环扫描点击区域的左边框，到屏幕右边的距离
+var t_click_x_left = 200;  // 循环扫描点击区域的左边框，到屏幕右边的距离
 var t_click_x_right = 40;   // 循环扫描点击区域的右边框，到屏幕右边的距离
 var t_click_y_top = 30;     // 循环扫描点击区域的上边框，在closeButtonBottom上方这么多
 var t_click_y_bottom = 40;  // 循环扫描点击区域的下边框，在closeButtonBottom下方这么多
@@ -431,6 +431,132 @@ function jumpMarket(btn) {
     sleep(1000);
     launchQidian();
 }
+function jiadianAd(btn) {
+    // btn 是"去完成"按钮，已在外部点击，现在等待进入序列页面
+    l_log("广告·加点 开始");
+    var jdKey = "jdDetailCoord";
+    var jdCoord = null;
+    var jdTmp = storage.get(jdKey);
+    if (jdTmp) jdCoord = JSON.parse(jdTmp);
+
+    // 等待离开福利中心，进入广告序列页面
+    var w = 0;
+    while (wherePage() == "freecenter" && w < 8) { sleep(500); w++; }
+    if (wherePage() == "freecenter") { l_warn("未进入广告序列"); return; }
+
+    var a1 = ["点击", "立即", "查看", "继续", "下载", "了解", "更多", "详情", "领取", "去"];
+    var jdScanX = device.width / 2;
+    var jdScanYStart = device.height - 100;
+    var jdScanYTop = device.height / 2;
+    var jdScanStep = 30;
+
+    for (var round = 0; round < 10; round++) {
+        // 底部扫描，点击后跳转进广告则保存坐标
+        var prevAct = currentActivity();
+        var jdOk = false;
+
+        if (jdCoord) {
+            l_verbose("尝试保存坐标", jdCoord.x, jdCoord.y);
+            click(jdCoord.x, jdCoord.y);
+            sleep(1000);
+            if (currentActivity() != prevAct) jdOk = true;
+        }
+        if (!jdOk) {
+            var scanY = jdScanYStart;
+            while (scanY >= jdScanYTop) {
+                l_verbose("扫描", jdScanX, scanY);
+                click(jdScanX, scanY);
+                sleep(1000);
+                if (currentActivity() != prevAct) {
+                    jdCoord = { x: jdScanX, y: scanY };
+                    storage.put(jdKey, JSON.stringify(jdCoord));
+                    l_log("保存查看详情坐标", jdScanX, scanY);
+                    jdOk = true;
+                    break;
+                }
+                scanY -= jdScanStep;
+            }
+        }
+        if (!jdOk) { l_warn("未找到查看详情跳转点"); break; }
+
+        adCount++;
+        l_log("广告·加点 第", round + 1, "个");
+
+        // OCR检测广告时长并等待
+        var sec = 0;
+        debugDelay = 3;
+        for (var di = 0; di < 8; di++) {
+            sleep(500);
+            var res = cappad();
+            for (var j = 0; j < res.length; j++) {
+                if (res[j].text.indexOf("得奖励") > -1 || res[j].text.indexOf("小游戏") > -1) {
+                    var s1 = res[j].text.replace(/[^\d.]/g, "") * 1;
+                    if (s1 > 0 && s1 <= 200) {
+                        sec = s1;
+                        if (res[j].text.indexOf("点击") > -1 || res[j].text.indexOf("玩") > -1) {
+                            var res2 = cappad();
+                            for (var k = 0; k < res2.length; k++) {
+                                if (strHasArr(res2[k].text, a1)) {
+                                    var b2 = res2[k].bounds;
+                                    click(parseInt((b2.left + b2.right) / 2), parseInt((b2.top + b2.bottom) / 2));
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+            if (sec > 0) break;
+        }
+        if (sec > 0) {
+            while (sec > 0) {
+                sleep(1000);
+                if (sec % 5 == 0) click(random(10, 20), random(10, 20));
+                sec--;
+            }
+            l_verbose("应该看完");
+        } else {
+            l_verbose("未检测到时长，等待15秒");
+            sleep(15000);
+        }
+        debugDelay = 1;
+        sleep(500);
+
+        // 点X关闭广告
+        var cn = 0;
+        var xr2 = device.width - t_click_x_right, yt2 = closeButtonBottom - t_click_y_top;
+        var xc2 = xr2, yc2 = yt2;
+        while (currentActivity() == "com.qq.e.tg.RewardvideoPortraitADActivity" && cn < 20) {
+            cn++;
+            var n1 = cn - 1;
+            if (n1 >= 0 && n1 < Object.keys(t_click).length) {
+                var tc = t_click[Object.keys(t_click)[n1]];
+                click(tc.x, tc.y);
+            } else {
+                click(xc2, yc2);
+                yc2 += t_click_step;
+                if (yc2 > closeButtonBottom + t_click_y_bottom) { yc2 = yt2; xc2 -= t_click_step; }
+            }
+            sleep(800);
+        }
+        sleep(500);
+
+        if (clickIknown()) { l_info("广告·加点 完成"); return; }
+        if (btn.parent()) break;
+
+        // 上滑切换下一广告
+        l_verbose("上滑切换下一广告");
+        swipe(device.width / 2, device.height * 2 / 3, device.width / 2, device.height / 3, 400);
+        sleep(1500);
+
+        if (clickIknown()) { l_info("广告·加点 完成"); return; }
+        if (btn.parent()) break;
+    }
+
+    var exitN = 0;
+    while (!btn.parent() && exitN < 5) { back(); sleep(1000); exitN++; }
+    l_info("广告·加点 结束");
+}
 function video_look(btn) {
     adCount++;
     l_verbose("广告", adCount, "开始");
@@ -530,9 +656,10 @@ function video_look(btn) {
 
         // 看完点X
         let n = 0;
-        let try_back_time = 2;
         let xr = device.width - t_click_x_right, yt = closeButtonBottom - t_click_y_top;
-        let xc = xr, yc = yt;
+        let _last = (function() { let k = Object.keys(t_click); return k.length > 0 ? t_click[k[k.length - 1]] : null; })();
+        let xc = _last ? _last.x : xr, yc = _last ? _last.y : yt;
+        let successX = -1, successY = -1;
         do {
             n++;
             if (currentActivity() != "com.qq.e.tg.RewardvideoPortraitADActivity") {
@@ -545,24 +672,59 @@ function video_look(btn) {
             }
             launchQidian();
 
-            if (n < try_back_time) {
-                // 有些旧版本，或手机没装应该跳的app，可能有用
-                l_verbose("尝试模拟“手势返回”");
-                back();
-            } else {
-                let n1 = n - try_back_time;
-                if (n1 < Object.keys(t_click).length) {
+            {
+                let n1 = n - 1;
+                if (n1 >= 0 && n1 < Object.keys(t_click).length) {
                     let tmp = t_click[Object.keys(t_click)[n1]];
                     l_verbose("尝试点击", tmp.x, tmp.y);
                     click(tmp.x, tmp.y);
+                    successX = tmp.x; successY = tmp.y;
                 } else {
                     if (xc < device.width - t_click_x_left) {
-                        l_error("没点到，放弃");
-                        l_warn("请编辑代码前几行，扩大循环点击扫描的范围，试出点击坐标后，再缩小范围。");
-                        throw new Error("请扩大扫描范围");
+                        l_error("扫描范围已搜索完毕，请手动点击广告关闭按钮");
+                        l_log("脚本等待手动关闭（最多2分钟），将自动记录坐标供下次使用");
+                        let manualX = -1, manualY = -1;
+                        let manualFloaty = null;
+                        try {
+                            manualFloaty = floaty.rawWindow(
+                                '<frame id="root" w="match_parent" h="match_parent" bg="#00000000" />'
+                            );
+                            manualFloaty.root.setOnTouchListener(function(_view, event) {
+                                if (event.getAction() == 0 && manualX < 0) {
+                                    manualX = Math.round(event.getRawX());
+                                    manualY = Math.round(event.getRawY());
+                                    l_log("捕获点击坐标", manualX, manualY);
+                                    // 关闭覆盖层后重放点击，让广告X按钮收到
+                                    threads.start(function() {
+                                        sleep(50);
+                                        try { manualFloaty.close(); } catch (e) {}
+                                        click(manualX, manualY);
+                                    });
+                                }
+                                return true; // 拦截事件，由上面模拟重放
+                            });
+                        } catch (e) {
+                            l_warn("无法监听触控:", e.message);
+                        }
+                        let waitN = 0;
+                        while (!btn.parent() && waitN < 120) {
+                            sleep(1000);
+                            waitN++;
+                        }
+                        if (manualFloaty) { try { manualFloaty.close(); } catch (e) {} }
+                        if (!btn.parent()) throw new Error("手动关闭广告超时");
+                        if (manualX > 0 && manualY > 0) {
+                            t_click[manualX + "," + manualY] = { x: manualX, y: manualY };
+                            l_log("已记录关闭坐标", manualX, manualY, "下次将优先使用");
+                        } else {
+                            l_warn("未能自动记录坐标，下次仍需手动");
+                        }
+                        successX = -1; successY = -1; // 手动关闭，坐标已在上方单独记录
+                        break;
                     }
                     l_verbose("扫描", xc, yc);
                     click(xc, yc);
+                    successX = xc; successY = yc;
                     yc += t_click_step;
                     if (yc > closeButtonBottom + t_click_y_bottom) {
                         yc = yt;
@@ -618,16 +780,17 @@ function video_look(btn) {
             }
         } while (!btn.parent());
 
-        if (!(xc == xr && yc == yt)) {
-            yc -= t_click_step;
-            if (yc < yt) {
-                yc = closeButtonBottom + t_click_y_bottom;
-                xc += t_click_step;
+        if (successX > 0 && successY > 0) {
+            let _key = "" + successX + "," + successY;
+            let _newTClick = {};
+            _newTClick[_key] = { x: successX, y: successY };
+            let _oldKeys = Object.keys(t_click);
+            for (let i = 0; i < _oldKeys.length && Object.keys(_newTClick).length < 3; i++) {
+                if (_oldKeys[i] !== _key) _newTClick[_oldKeys[i]] = t_click[_oldKeys[i]];
             }
-            let tmp = new Object();
-            tmp.x = xc;
-            tmp.y = yc;
-            t_click["" + xc + "," + yc] = tmp;
+            t_click = _newTClick;
+            storage.put(closeCoord_name, JSON.stringify(t_click));
+            l_log("保存关闭坐标", successX, successY);
         }
     } else {
         // 旧广告，用旧方法
@@ -1245,6 +1408,7 @@ try {
                 let c = 0;
                 if (s.indexOf("广告") > -1) c = 1;  // 目标按钮左边介绍文字如果有广告才点
                 if (s.indexOf("市场") > -1) c = 2;
+                if (s.indexOf("加点") > -1) c = 0;  // 广告·加点暂不处理
                 if (c == 0) {
                     targetFalse++;
                     continue;
