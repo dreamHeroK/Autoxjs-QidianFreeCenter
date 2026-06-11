@@ -879,46 +879,53 @@ function video_look(btn) {
 
         //退出视频
         let n = 0;
+        let xr2 = device.width - t_click_x_right, yt2 = closeButtonBottom - t_click_y_top;
+        let _last2 = (function() { let k = Object.keys(t_click); return k.length > 0 ? t_click[k[k.length - 1]] : null; })();
+        let xc2 = _last2 ? _last2.x : xr2, yc2 = _last2 ? _last2.y : yt2;
+        let successX2 = -1, successY2 = -1;
         do {
             n++;
             if (n == 1) {
-                click(parseInt((x1 + x2) / 2), parseInt((y1 + y2) / 2));
-            } else if (textContains("可获得奖励").exists()) {
-                l_log("退出失败，重新获取退出坐标");
-                if (textContains("跳过").exists()) {
-                    textContains("跳过").findOne(500).click();
-                } else {
-                    if (textContains("可获得奖励").exists()) {
-                        video_quit = textContains("可获得奖励").findOne(500).bounds();
-                    }
-                    x1 = 0;
-                    x2 = video_quit.left;
-                    y1 = video_quit.top;
-                    y2 = video_quit.bottom;
-                    do {
-                        let x = random(x1, x2);
-                        let y = random(y1, y2);
-                        l_verbose("区域随机点击", x, y);
-                        click(x, y);
-                        if (textContains("继续观看").exists()) {
-                            textContains("继续观看").click();
-                            sleep(1500);
-                        }
-                        if (textContains("继续听完").exists()) {
-                            textContains("继续听完").click();
-                            sleep(1500);
-                        }
-                    } while (textContains("可获得奖励").exists());
-                }
-            } else if (n < 5) {
                 l_verbose("尝试模拟“手势返回”");
                 back();
             } else {
-                l_error("未知原因退出失败");
-                throw new Error("退出失败");
+                // 手势退出失败，改用扫描点击X按钮
+                let n1 = n - 2;
+                if (n1 >= 0 && n1 < Object.keys(t_click).length) {
+                    let tmp = t_click[Object.keys(t_click)[n1]];
+                    l_verbose("尝试点击", tmp.x, tmp.y);
+                    click(tmp.x, tmp.y);
+                    successX2 = tmp.x; successY2 = tmp.y;
+                } else {
+                    if (xc2 < device.width - t_click_x_left) {
+                        l_error("扫描范围已搜索完毕，退出失败");
+                        throw new Error("退出失败");
+                    }
+                    l_verbose("扫描", xc2, yc2);
+                    click(xc2, yc2);
+                    successX2 = xc2; successY2 = yc2;
+                    yc2 += t_click_step;
+                    if (yc2 > closeButtonBottom + t_click_y_bottom) {
+                        yc2 = yt2;
+                        xc2 -= t_click_step;
+                    }
+                }
             }
             sleep(1000);
         } while (!btn.parent());
+
+        if (successX2 > 0 && successY2 > 0) {
+            let _key2 = "" + successX2 + "," + successY2;
+            let _newTClick2 = {};
+            _newTClick2[_key2] = { x: successX2, y: successY2 };
+            let _oldKeys2 = Object.keys(t_click);
+            for (let i = 0; i < _oldKeys2.length && Object.keys(_newTClick2).length < 3; i++) {
+                if (_oldKeys2[i] !== _key2) _newTClick2[_oldKeys2[i]] = t_click[_oldKeys2[i]];
+            }
+            t_click = _newTClick2;
+            storage.put(closeCoord_name, JSON.stringify(t_click));
+            l_log("保存关闭坐标", successX2, successY2);
+        }
     }
     //sleep(1000);
     clickIknown();
